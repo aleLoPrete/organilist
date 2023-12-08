@@ -1,3 +1,3 @@
 # Organilist
 
-Python script to bookmarks websites.
+Python script managing bookmarks.
