@@ -7,20 +7,33 @@ import sys
 import yaml
 import uuid
 import os
+from test import *
+import os
 
 # Load YAML data from a file
 
 
-CONFIG_FOLDER = "~/.config/organilist"
-
-
 def get_config_data():
-    # try:
-    with open(f"{CONFIG_FOLDER}/config.yaml", "r") as yaml_file:
-        config_data = yaml.safe_load(yaml_file)
-        return config_data
-    # except FileNotFoundError:
-    # print("Config file not found. Create one at ~/.config/organilist/config.yaml")
+    # Get the user's home directory
+    home_directory = os.path.expanduser("~")
+    config_file_path = os.path.join(
+        home_directory, ".config", "organilist", "config.yaml"
+    )
+
+    try:
+        with open(config_file_path, "r") as yaml_file:
+            config_data = yaml.safe_load(yaml_file)
+            return config_data
+    except FileNotFoundError:
+        print(f"{config_file_path} file not found. Create one at {config_file_path}")
+        exit(1)
+
+
+def get_bm_path(config_data):
+    if config_data["bm_file_path"] == None:
+        print("Bookmark file not found. Specify one in config file")
+        exit(1)
+    return config_data["bm_file_path"]
 
 
 def get_xclip_content():
@@ -29,12 +42,18 @@ def get_xclip_content():
     )
 
 
-def add_to_bookmarks(bm_file_path, url, title, tags=None):
+def add_to_bookmarks(bm_file_path, url, title, tags=None, reading_time=None):
     if tags is None:
         tags = []
 
     bookmark_id = str(uuid.uuid4())
-    bookmark = {"id": bookmark_id, "url": url, "title": title, "tags": tags}
+    bookmark = {
+        "id": bookmark_id,
+        "url": url,
+        "title": title,
+        "tags": tags,
+        "reading_time": reading_time,
+    }
 
     with open(bm_file_path, "a") as file:
         yaml.dump({bookmark_id: bookmark}, file, default_flow_style=False)
@@ -67,7 +86,41 @@ def get_webpage_title(url):
             )
 
     except Exception as e:
-        return ""
+        return "Falied to fetch webpage Title"
+
+
+def get_reading_time(url, words_per_minute=200):
+    # TODO: fix, not working
+    try:
+        # Send an HTTP GET request to the URL
+        response = requests.get(url)
+
+        # Check if the request was successful (status code 200)
+        if response.status_code == 200:
+            # Parse the HTML content of the webpage
+            soup = BeautifulSoup(response.text, "html.parser")
+
+            # Extract the content of the article
+            article_content = ""
+            for paragraph in soup.find_all("p"):
+                article_content += paragraph.get_text() + " "
+
+            # Clean the text by removing HTML tags and extra whitespaces
+            article_content = response.sub(r"\s+", " ", article_content)
+
+            # Count the number of words in the article
+            word_count = len(article_content.split())
+
+            # Calculate the reading time in minutes
+            reading_time = int(word_count / words_per_minute) + 1
+
+            return reading_time
+        else:
+            return "Failed to fetch the webpage (status code {})".format(
+                response.status_code
+            )
+    except Exception as e:
+        return "Failed to fetch reading time"
 
 
 def list_bookmarks(file_path):
@@ -84,37 +137,40 @@ def open_file_with_neovim(file_path):
         print(f"Error: {e}")
 
 
-if __name__ == "__main__":
-    # config_data = get_config_data()
-    bm_file_path = (
-        "/home/rick/Notes/organilist/bookmark.yaml"  # config_data["bm_file_path"]
+def add_bookmark():
+    selected_text = get_xclip_content()
+    print("New bookmark:")
+    print(selected_text)
+
+    input("[Enter to save]")
+
+    # Retrieve tags
+    # TODO: test no tags
+    tags = sys.argv[sys.argv.index("-t") + 1 :]
+    add_to_bookmarks(
+        bm_file_path, selected_text, get_webpage_title(selected_text), tags
     )
 
-    # ~/Notes/organilist/bookmark.yaml"  # config_data["bm_file_path"]
 
-    # TODO: Restruture management of bookmark file
-    # List bookmarks
+def choice_manager(bm_file_path):
+    # List bookmakrs
     if "-l" in sys.argv:
-        # List bookmakrs
         list_bookmarks(bm_file_path)
     # Edit bookmarks
     elif "-e" in sys.argv:
-        # Edit bookmark file
         open_file_with_neovim(bm_file_path)
+    # Add new bookmark
     else:
-        # Get selected text
-        selected_text = get_xclip_content()
-        print("New bookmark:")
-        print(selected_text)
+        add_bookmark()
 
-        if "-t" in sys.argv:
-            # Add to bookmark_file with tags
-            tags = sys.argv[sys.argv.index("-t") + 1 :]
-            add_to_bookmarks(
-                bm_file_path, selected_text, get_webpage_title(selected_text), tags
-            )
-        else:
-            # Add to bookmark_file
-            add_to_bookmarks(
-                bm_file_path, selected_text, get_webpage_title(selected_text)
-            )
+
+# TODO: Add support for bookmark navigation
+# TODO: Restruture management of bookmark file
+
+
+if __name__ == "__main__":
+    config_data = get_config_data()
+
+    bm_file_path = get_bm_path(config_data)
+
+    choice_manager(bm_file_path)
